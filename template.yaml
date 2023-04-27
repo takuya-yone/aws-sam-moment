@@ -84,7 +84,7 @@ Resources:
         Variables:
           DYNAMO_TABLE_NAME: !Ref SampleDynamoTable
           MOMENTO_TOKEN: '{{resolve:secretsmanager:MOMENTO_TOKEN:SecretString:MOMENTO_TOKEN}}'
-          MOMENTO_CACHE_NAME: 'sam-moment-cache'
+          MOMENTO_CACHE_NAME: 'sam-momento-cache'
       Events:
         Momento:
           Type: Api
