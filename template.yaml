@@ -8,26 +8,99 @@ Description: >
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
   Function:
-    Timeout: 3
+    Timeout: 30
 
     Tracing: Active
   Api:
     TracingEnabled: true
 Resources:
-  HelloWorldFunction:
-    Type: AWS::Serverless::Function # More info about Function Resource: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#awsserverlessfunction
+
+# ------------------------------------------------------------#
+#  IAM
+# ------------------------------------------------------------# 
+  MomentoFunctionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /
+      RoleName: 'MomentoFunctionRole'
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: "Allow"
+            Principal:
+              Service:
+                - "lambda.amazonaws.com"
+            Action:
+              - "sts:AssumeRole"
+      MaxSessionDuration: 3600
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole'
+        - 'arn:aws:iam::aws:policy/AWSXrayWriteOnlyAccess'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaRole'
+        - 'arn:aws:iam::aws:policy/service-role/AWSLambdaSQSQueueExecutionRole'
+      Policies:
+        - PolicyName: "SampleDynamoAccessPolicy"
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: "Allow"
+                Action:
+                  - "dynamodb:*"
+                Resource: 
+                  - !GetAtt SampleDynamoTable.Arn
+
+# ------------------------------------------------------------#
+#  DynamoDB
+# ------------------------------------------------------------# 
+
+  SampleDynamoTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName:  "sample-dynamo-table"
+      AttributeDefinitions: 
+        - AttributeName: primarykey
+          AttributeType: S
+      KeySchema:
+        - AttributeName: primarykey
+          KeyType: HASH
+      BillingMode: PAY_PER_REQUEST
+
+# ------------------------------------------------------------#
+#  Rest API
+# ------------------------------------------------------------# 
+
+  MomentoFunction:
+    Type: AWS::Serverless::Function 
     Properties:
       CodeUri: hello_world/
       Handler: app.lambda_handler
+      Role: !GetAtt MomentoFunctionRole.Arn
       Runtime: python3.10
       Architectures:
       - x86_64
+      Layers:
+        - !Sub arn:aws:lambda:${AWS::Region}:017000801446:layer:AWSLambdaPowertoolsPythonV2:25
+      Environment:
+        Variables:
+          DYNAMO_TABLE_NAME: !Ref SampleDynamoTable
+          MOMENTO_TOKEN: '{{resolve:secretsmanager:MOMENTO_TOKEN:SecretString:MOMENTO_TOKEN}}'
+          MOMENTO_CACHE_NAME: 'sam-moment-cache'
       Events:
-        HelloWorld:
-          Type: Api # More info about API Event Source: https://github.com/awslabs/serverless-application-model/blob/master/versions/2016-10-31.md#api
+        Momento:
+          Type: Api
           Properties:
-            Path: /hello
+            Path: /momento
             Method: get
+
+  MomentoFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub /aws/lambda/${MomentoFunction}
+      RetentionInDays: 7
+
+# ------------------------------------------------------------#
+#  Lambda Insight
+# ------------------------------------------------------------# 
 
   ApplicationResourceGroup:
     Type: AWS::ResourceGroups::Group
@@ -42,16 +115,17 @@ Resources:
       ResourceGroupName:
         Ref: ApplicationResourceGroup
       AutoConfigurationEnabled: 'true'
+
+# ------------------------------------------------------------#
+#  Outputs
+# ------------------------------------------------------------# 
 Outputs:
-  # ServerlessRestApi is an implicit API created out of Events key under Serverless::Function
-  # Find out more about other implicit resources you can reference within SAM
-  # https://github.com/awslabs/serverless-application-model/blob/master/docs/internals/generated_resources.rst#api
-  HelloWorldApi:
+  MomentoApi:
     Description: API Gateway endpoint URL for Prod stage for Hello World function
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/hello/"
-  HelloWorldFunction:
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/momento/"
+  MomentoFunction:
     Description: Hello World Lambda Function ARN
-    Value: !GetAtt HelloWorldFunction.Arn
-  HelloWorldFunctionIamRole:
+    Value: !GetAtt MomentoFunction.Arn
+  MomentoFunctionRole:
     Description: Implicit IAM Role created for Hello World function
-    Value: !GetAtt HelloWorldFunctionRole.Arn
+    Value: !GetAtt MomentoFunctionRole.Arn
