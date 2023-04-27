@@ -89,7 +89,7 @@ Resources:
         Momento:
           Type: Api
           Properties:
-            Path: /momento
+            Path: /momento/{primarykey}
             Method: get
 
   MomentoFunctionLogGroup:

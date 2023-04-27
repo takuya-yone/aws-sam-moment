@@ -1,5 +1,6 @@
 import json
 import os
+import boto3
 from momento import CacheClient, Configurations, CredentialProvider
 from momento.responses import CacheGet, CacheSet, CreateCache
 from datetime import timedelta
@@ -17,6 +18,10 @@ DYNAMO_TABLE_NAME = os.environ['DYNAMO_TABLE_NAME']
 MOMENTO_TOKEN = os.environ['MOMENTO_TOKEN']
 MOMENTO_CACHE_NAME = os.environ['MOMENTO_CACHE_NAME']
 
+# dynamodb = boto3.resource('dynamodb')
+# dynamo_table = dynamodb.Table(DYNAMO_TABLE_NAME)
+# primarykey='single_default'
+
 tracer = Tracer()
 logger = Logger()
 
@@ -27,15 +32,11 @@ logger = Logger()
 @logger.inject_lambda_context(log_event=False)
 def lambda_handler(event, context):
 
-    logger.info(MOMENTO_TOKEN)
+    primarykey = event['pathParameters']['primarykey']
+    print(f"Path Parameter is {primarykey}")
 
-    # try:
-    #     ip = requests.get("http://checkip.amazonaws.com/")
-    # except requests.RequestException as e:
-    #     # Send some context about this error to Lambda Logs
-    #     print(e)
+    # logger.info(MOMENTO_TOKEN)
 
-    #     raise e
     with CacheClient(
         configuration=Configurations.Laptop.v1(),
         credential_provider=CredentialProvider.from_environment_variable("MOMENTO_TOKEN"),
@@ -48,27 +49,45 @@ def lambda_handler(event, context):
             case CreateCache.Error() as error:
                 raise error.inner_exception
 
-        print("Setting Key: foo to Value: FOO")
-        set_response = cache_client.set(MOMENTO_CACHE_NAME, "foo", "FOO")
-        match set_response:
-            case CacheSet.Error() as error:
-                raise error.inner_exception
 
-        print("Getting Key: foo")
-        get_response = cache_client.get(MOMENTO_CACHE_NAME, "foo")
+
+        print(f"Getting Key: {primarykey}")
+        get_response = cache_client.get(MOMENTO_CACHE_NAME, primarykey)
         match get_response:
             case CacheGet.Hit() as hit:
                 print(f"Look up resulted in a hit: {hit}")
-                print(f"Looked up Value: {hit.value_string!r}")
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({
+                        "message": "data from Momento",
+                        "data": hit.value_string
+                    }),
+                }  
             case CacheGet.Miss():
-                print("Look up resulted in a: miss. This is unexpected.")
+                # print("Look up resulted in a: miss. This is unexpected.")
+                print(f"Setting Key: {primarykey}")
+                dynamodb = boto3.resource('dynamodb')
+                dynamo_table = dynamodb.Table(DYNAMO_TABLE_NAME)
+                dynamo_table_response = dynamo_table.get_item(
+                    Key={
+                        'primarykey': str(primarykey)
+                    }
+                )
+                data = dynamo_table_response.get('Item', {})
+                # print(dynamo_table_response)
+                # print(data)
+                set_response = cache_client.set(MOMENTO_CACHE_NAME, primarykey, json.dumps(data))
+                match set_response:
+                    case CacheSet.Error() as error:
+                        raise error.inner_exception
+                return {
+                    "statusCode": 200,
+                    "body": json.dumps({
+                        "message": "data from Dynamo",
+                        "data": json.dumps(data)
+                    }),
+                }                
             case CacheGet.Error() as error:
                 raise error.inner_exception
 
-    return {
-        "statusCode": 200,
-        "body": json.dumps({
-            "message": "hello world",
-            # "location": ip.text.replace("\n", "")
-        }),
-    }
+    return None
