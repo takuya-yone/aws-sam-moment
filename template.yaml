@@ -3,7 +3,7 @@ Transform: AWS::Serverless-2016-10-31
 Description: >
   aws-sam-moment
 
-  Sample SAM Template for aws-sam-moment
+  Sample SAM Template for aws-sam-momento
 
 # More info about Globals: https://github.com/awslabs/serverless-application-model/blob/master/docs/globals.rst
 Globals:
